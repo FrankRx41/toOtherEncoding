@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <windows.h>
-
+/*******************************************************************************
+目前仍然有很多的BUG
+但是繼續修復也沒有什麼實際的意義
+需要了解的關於文字編碼的知識太多
+*******************************************************************************/
 #define _UNICODE    1
 #define _ASCI932    2
 #define _ASCI936    3
@@ -12,10 +16,14 @@ char *modify[] = {
 
 FILE * FileOpen(const char * file)
 {
+    if(file==0){
+        printf("open error\n");   
+        exit(0);
+    }
     FILE * fp = fopen(file,"rb");
     if(fp == 0)
     {
-        perror("'rb' open error");
+        perror("'rb' open error\n");
         exit(0);
     }
     return fp;
@@ -84,41 +92,42 @@ FILE * FileCreate(const char * oldfilename,int encoding)
     return fp;
 }
 
+void toUnicode(char * olddata,wchar_t * newdata,long size,int oldcode)
+{
+    MultiByteToWideChar(oldcode,0,olddata,-1,newdata+1,size);
+    newdata[0] = 0xFEFF;
+}
+
+long CompFileSize(FILE *fp)
+{
+    fseek(fp,0,SEEK_END);
+    long size = ftell(fp);
+    fseek(fp,0,SEEK_SET);
+    return size;
+}
+//return 0:success; -1:malloc error;
 int FileWriteIn(FILE* oldfile,FILE* newfile,int oldcode,int newcode)
 {
-    fseek(oldfile,0,SEEK_END);
-    long oldfilesize = ftell(oldfile);
-    fseek(oldfile,0,SEEK_SET);
-    printf("size %d\n",oldfilesize);
+    long oldfilesize = CompFileSize(oldfile);
     char * olddata = (char*)calloc(sizeof(char),oldfilesize);
     if(olddata==NULL)
     {
-        perror("olddata error");
         return -1;
     }
     fread(olddata,oldfilesize,1,oldfile);
-    for(int i=0;i<oldfilesize;i++)
-    {
-        printf("%02X ",olddata[i]);
-    }
-    printf("%s\n",olddata);
-    long size = MultiByteToWideChar(oldcode,0,olddata,-1,NULL,0);
-    wchar_t * newdata = (wchar_t *)calloc(size,sizeof(wchar_t));
+
+    long newfilesize = MultiByteToWideChar(oldcode,0,olddata,-1,NULL,0);
+    wchar_t * newdata = (wchar_t *)calloc(newfilesize,sizeof(wchar_t));
     if(newdata==NULL)
     {
-        perror("newdata error");
         return -1;
     }
-    MultiByteToWideChar(oldcode,0,olddata,-1,newdata,size);
-    unsigned char buf  = 0;
-    buf = 0xFF;
-    fwrite(&buf,sizeof(buf),1,newfile);
-    buf = 0xFE;
-    fwrite(&buf,sizeof(buf),1,newfile);
-
-    fwrite(newdata,sizeof(wchar_t),size-1,newfile);
-    printf("new size %ld\n",size);
-    //MultiByteToWideChar(CP_UTF8,0,(LPCSTR)data,4,wch,1024);
+    switch(newcode){
+    default:
+        toUnicode(olddata,newdata,newfilesize,oldcode);
+    }
+    fwrite(newdata,sizeof(wchar_t),newfilesize,newfile);
+    return 0;
 }
 int JudgeEncoding(FILE *fp)
 {
@@ -141,9 +150,10 @@ void CheckMain()
     int newencod     = _UNICODE;
     FILE * fr = FileOpen(oldfilename);
     int oldencod     = CP_ACP;//JudgeEncoding(fr);
-    FilePrint(fr);
+    //FilePrint(fr);
     FILE * fw = FileCreate(oldfilename,newencod);
-    FileWriteIn(fr,fw,oldencod,newencod);
+    int errorcode = FileWriteIn(fr,fw,oldencod,newencod);
+    if(errorcode==-1)printf("malloc error\n");
     fclose(fr);
     fclose(fw);
 }
@@ -180,8 +190,16 @@ void CheckSetFileNameEnter()
 /*******************************************************************************
 *******************************************************************************/
 int main(int argc, char **argv){
-    CheckMain();
+    //CheckMain();
     //CheckFindLastCharFromStrEnter();
     //CheckSetFileNameEnter();
+    int newencod     = _UNICODE;
+    FILE * fr = FileOpen(argv[1]);
+    int oldencod     = JudgeEncoding(fr);
+    FilePrint(fr);
+    FILE * fw = FileCreate(argv[1],newencod);
+    FileWriteIn(fr,fw,oldencod,newencod);
+    fclose(fr);
+    fclose(fw);
     return 0;
 }
